@@ -31,9 +31,9 @@
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/reboot.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <linux/reboot.h>
 #include <fcntl.h>
 #ifndef _O_BINARY
 #define _O_BINARY 0
@@ -901,15 +901,22 @@ static int my_shutdown(void)
 	return -1;
 }
 
+extern int reboot(int magic, int magic2, int cmd, void *arg);
+
 /*
  *	Exec the new kernel (reboot)
  */
 static int my_exec(void)
 {
+	int live_update = 0;
+
 	if (xen_present())
 		xen_kexec_exec(kexec_flags);
-	else
-		reboot(LINUX_REBOOT_CMD_KEXEC);
+	else if (kexec_flags & KEXEC_LIVE_UPDATE) {
+		live_update = 1;
+		reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_KEXEC, &live_update);
+	} else
+		reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_KEXEC, NULL);
 	/* I have failed if I make it here */
 	fprintf(stderr, "kexec failed: %s\n", 
 		strerror(errno));
@@ -1404,10 +1411,6 @@ int main(int argc, char *argv[])
 			kexec_file_flags |= KEXEC_FILE_UNLOAD;
 			break;
                 case OPT_EXEC_LIVE_UPDATE:
-			if ( !xen_present() ) {
-				fprintf(stderr, "--exec-live-update only works under xen.\n");
-                                return 1;
-                        }
 			kexec_flags |= KEXEC_LIVE_UPDATE;
 			/* fallthrough */
 		case OPT_EXEC:
